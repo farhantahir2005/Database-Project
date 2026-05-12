@@ -1,0 +1,722 @@
+
+/* =========================================================
+   1. DATABASE START
+========================================================= */
+
+IF DB_ID('Flex15') IS NOT NULL
+BEGIN
+    ALTER DATABASE Flex15 SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE Flex15;
+END;
+GO
+
+CREATE DATABASE Flex15;
+GO
+
+USE Flex15;
+GO
+
+
+/* =========================================================
+   2. TABLES
+========================================================= */
+
+/* ---------------- USERS ---------------- */
+
+CREATE TABLE Users (
+    UserID INT PRIMARY KEY IDENTITY(1,1),
+    Email VARCHAR(100) UNIQUE NOT NULL,
+    Password VARCHAR(255) NOT NULL,
+    FirstName VARCHAR(50) NOT NULL,
+    LastName VARCHAR(50) NOT NULL,
+    UserType VARCHAR(20) NOT NULL
+        CHECK (UserType IN ('Student','Teacher','Admin')),
+    Phone VARCHAR(20),
+    DateOfBirth DATE,
+    ProfilePicture VARCHAR(255),
+    IsActive BIT DEFAULT 1,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    LastLogin DATETIME
+);
+GO
+
+
+/* ---------------- DEPARTMENTS ---------------- */
+
+CREATE TABLE Departments (
+    DepartmentID INT PRIMARY KEY IDENTITY(1,1),
+    DepartmentName VARCHAR(100) UNIQUE NOT NULL,
+    DepartmentCode VARCHAR(10) UNIQUE NOT NULL,
+    HeadOfDepartment INT NULL,
+    Description VARCHAR(MAX),
+    CreatedAt DATETIME DEFAULT GETDATE(),
+
+    FOREIGN KEY (HeadOfDepartment) REFERENCES Users(UserID)
+);
+GO
+
+
+/* ---------------- COURSES ---------------- */
+
+CREATE TABLE Courses (
+    CourseID INT PRIMARY KEY IDENTITY(1,1),
+    CourseCode VARCHAR(20) UNIQUE NOT NULL,
+    CourseName VARCHAR(100) NOT NULL,
+    DepartmentID INT,
+    Credits INT NOT NULL CHECK (Credits > 0),
+    Description VARCHAR(MAX),
+    Prerequisites VARCHAR(255),
+    IsActive BIT DEFAULT 1,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+
+    FOREIGN KEY (DepartmentID) REFERENCES Departments(DepartmentID)
+        ON DELETE CASCADE
+);
+GO
+
+
+/* ---------------- COURSE OFFERINGS ---------------- */
+
+CREATE TABLE CourseOfferings (
+    OfferingID INT PRIMARY KEY IDENTITY(1,1),
+    CourseID INT,
+    TeacherID INT,
+    Semester VARCHAR(20) NOT NULL
+        CHECK (Semester IN ('Fall','Spring','Summer')),
+    Year INT NOT NULL CHECK (Year BETWEEN 2020 AND 2035),
+    Section VARCHAR(10),
+    MaxCapacity INT CHECK (MaxCapacity > 0),
+    Schedule VARCHAR(100),
+    Classroom VARCHAR(50),
+    StartDate DATE NOT NULL,
+    EndDate DATE NOT NULL,
+    IsActive BIT DEFAULT 1,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+
+    FOREIGN KEY (CourseID) REFERENCES Courses(CourseID) ON DELETE CASCADE,
+    FOREIGN KEY (TeacherID) REFERENCES Users(UserID),
+
+    CONSTRAINT UQ_Offering UNIQUE (CourseID, Semester, Year, Section)
+);
+GO
+
+
+/* ---------------- ENROLLMENTS ---------------- */
+
+CREATE TABLE Enrollments (
+    EnrollmentID INT PRIMARY KEY IDENTITY(1,1),
+    StudentID INT,
+    OfferingID INT,
+    EnrollmentDate DATETIME DEFAULT GETDATE(),
+    Grade VARCHAR(2)
+        CHECK (Grade IN ('A+','A','A-','B+','B','B-','C+','C','C-','D','F','W','I')),
+    Status VARCHAR(20) DEFAULT 'Active'
+        CHECK (Status IN ('Active','Dropped','Completed','Withdrawn')),
+
+    FOREIGN KEY (StudentID) REFERENCES Users(UserID) ON DELETE CASCADE,
+    FOREIGN KEY (OfferingID) REFERENCES CourseOfferings(OfferingID) ON DELETE CASCADE,
+
+    CONSTRAINT UQ_Enrollment UNIQUE (StudentID, OfferingID)
+);
+GO
+
+
+/* ---------------- ASSIGNMENTS ---------------- */
+
+CREATE TABLE Assignments (
+    AssignmentID INT PRIMARY KEY IDENTITY(1,1),
+    OfferingID INT,
+    Title VARCHAR(200) NOT NULL,
+    Description VARCHAR(MAX),
+    AssignmentType VARCHAR(20)
+        CHECK (AssignmentType IN ('Homework','Quiz','Exam','Project','Lab')),
+    TotalMarks INT CHECK (TotalMarks > 0),
+    DueDate DATETIME NOT NULL,
+    AllowLateSubmission BIT DEFAULT 0,
+    AttachmentPath VARCHAR(255),
+    CreatedAt DATETIME DEFAULT GETDATE(),
+
+    FOREIGN KEY (OfferingID) REFERENCES CourseOfferings(OfferingID) ON DELETE CASCADE
+);
+GO
+
+
+/* ---------------- SUBMISSIONS ---------------- */
+
+CREATE TABLE Submissions (
+    SubmissionID INT PRIMARY KEY IDENTITY(1,1),
+    AssignmentID INT,
+    StudentID INT,
+    SubmissionDate DATETIME DEFAULT GETDATE(),
+    FilePath VARCHAR(255),
+    Content VARCHAR(MAX),
+    MarksObtained DECIMAL(5,2),
+    Feedback VARCHAR(MAX),
+    Status VARCHAR(20) DEFAULT 'Submitted'
+        CHECK (Status IN ('Submitted','Graded','Late','Resubmitted')),
+    GradedBy INT,
+    GradedAt DATETIME,
+
+    FOREIGN KEY (AssignmentID) REFERENCES Assignments(AssignmentID) ON DELETE CASCADE,
+    FOREIGN KEY (StudentID) REFERENCES Users(UserID) ON DELETE CASCADE,
+    FOREIGN KEY (GradedBy) REFERENCES Users(UserID),
+
+    CONSTRAINT UQ_Submission UNIQUE (AssignmentID, StudentID)
+);
+GO
+
+
+/* ---------------- ATTENDANCE ---------------- */
+
+CREATE TABLE Attendance (
+    AttendanceID INT PRIMARY KEY IDENTITY(1,1),
+    OfferingID INT,
+    StudentID INT,
+    AttendanceDate DATE NOT NULL,
+    Status VARCHAR(10)
+        CHECK (Status IN ('Present','Absent','Late','Excused')),
+    Remarks VARCHAR(MAX),
+    MarkedBy INT,
+    MarkedAt DATETIME DEFAULT GETDATE(),
+
+    FOREIGN KEY (OfferingID) REFERENCES CourseOfferings(OfferingID) ON DELETE CASCADE,
+    FOREIGN KEY (StudentID) REFERENCES Users(UserID) ON DELETE CASCADE,
+    FOREIGN KEY (MarkedBy) REFERENCES Users(UserID),
+
+    CONSTRAINT UQ_Attendance UNIQUE (OfferingID, StudentID, AttendanceDate)
+);
+GO
+
+
+/* ---------------- AUDIT LOG ---------------- */
+
+CREATE TABLE AuditLog (
+    LogID INT IDENTITY(1,1) PRIMARY KEY,
+    TableName VARCHAR(100),
+    Action VARCHAR(50),
+    RecordID INT,
+    ChangedAt DATETIME DEFAULT GETDATE(),
+    Notes VARCHAR(500)
+);
+GO
+
+
+/* =========================================================
+   3. SAMPLE DATA
+========================================================= */
+
+INSERT INTO Users (Email, Password, FirstName, LastName, UserType, Phone, DateOfBirth)
+VALUES
+('admin@lms.com','admin123','John','Admin','Admin','0300-1234567','1980-01-01'),
+('teacher1@lms.com','pass123','Ali','Khan','Teacher','0301-1111111','1985-02-10'),
+('teacher2@lms.com','pass123','Sara','Ahmed','Teacher','0302-2222222','1987-05-12'),
+('student1@lms.com','pass123','Ahmed','Hassan','Student','0303-3333333','2002-09-01'),
+('student2@lms.com','pass123','Fatima','Ali','Student','0304-4444444','2003-01-20');
+GO
+
+
+INSERT INTO Departments (DepartmentName, DepartmentCode, HeadOfDepartment)
+VALUES
+('Computer Science','CS',2),
+('Mathematics','MATH',3);
+GO
+
+
+INSERT INTO Courses (CourseCode, CourseName, DepartmentID, Credits)
+VALUES
+('CS101','Programming Fundamentals',1,3),
+('CS201','Data Structures',1,4);
+GO
+
+
+INSERT INTO CourseOfferings
+(CourseID, TeacherID, Semester, Year, Section, MaxCapacity, StartDate, EndDate)
+VALUES
+(1,2,'Spring',2026,'A',40,'2026-02-01','2026-06-01'),
+(2,3,'Spring',2026,'A',35,'2026-02-01','2026-06-01');
+GO
+
+
+INSERT INTO Enrollments (StudentID, OfferingID)
+VALUES
+(4,1),
+(5,1),
+(4,2);
+GO
+
+
+/* =========================================================
+   4. VIEWS
+========================================================= */
+
+CREATE OR ALTER VIEW vw_StudentEnrollments AS
+SELECT
+    U.UserID,
+    U.FirstName + ' ' + U.LastName AS StudentName,
+    C.CourseName,
+    CO.Semester,
+    CO.Year,
+    E.Status
+FROM Enrollments E
+JOIN Users U ON E.StudentID = U.UserID
+JOIN CourseOfferings CO ON E.OfferingID = CO.OfferingID
+JOIN Courses C ON CO.CourseID = C.CourseID;
+GO
+
+
+CREATE OR ALTER VIEW vw_SubmissionDetails AS
+SELECT
+    S.SubmissionID,
+    U.FirstName + ' ' + U.LastName AS StudentName,
+    A.Title AS AssignmentTitle,
+    S.SubmissionDate,
+    S.MarksObtained,
+    S.Status
+FROM Submissions S
+JOIN Users U ON S.StudentID = U.UserID
+JOIN Assignments A ON S.AssignmentID = A.AssignmentID;
+GO
+
+
+CREATE OR ALTER VIEW vw_AttendanceReport AS
+SELECT
+    U.FirstName + ' ' + U.LastName AS StudentName,
+    C.CourseName,
+    A.AttendanceDate,
+    A.Status
+FROM Attendance A
+JOIN Users U ON A.StudentID = U.UserID
+JOIN CourseOfferings CO ON A.OfferingID = CO.OfferingID
+JOIN Courses C ON CO.CourseID = C.CourseID;
+GO
+
+
+/* =========================================================
+   5. INDEXES
+========================================================= */
+
+CREATE INDEX IX_Enrollments_StudentID ON Enrollments(StudentID);
+CREATE INDEX IX_Attendance_StudentID ON Attendance(StudentID);
+CREATE INDEX IX_Submissions_AssignmentID ON Submissions(AssignmentID);
+CREATE INDEX IX_Submissions_StudentID ON Submissions(StudentID);
+GO
+
+
+/* =========================================================
+   6. STORED PROCEDURES
+========================================================= */
+
+/* ---------------- ADD USER ---------------- */
+
+CREATE OR ALTER PROCEDURE sp_AddUser
+    @Email VARCHAR(100),
+    @Password VARCHAR(255),
+    @FirstName VARCHAR(50),
+    @LastName VARCHAR(50),
+    @UserType VARCHAR(20),
+    @Phone VARCHAR(20),
+    @DateOfBirth DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO Users
+    (
+        Email,
+        Password,
+        FirstName,
+        LastName,
+        UserType,
+        Phone,
+        DateOfBirth
+    )
+    VALUES
+    (
+        @Email,
+        @Password,
+        @FirstName,
+        @LastName,
+        @UserType,
+        @Phone,
+        @DateOfBirth
+    );
+END;
+GO
+
+
+/* ---------------- DELETE USER ---------------- */
+
+CREATE OR ALTER PROCEDURE sp_DeleteUser
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DELETE FROM Attendance
+        WHERE StudentID = @UserID;
+
+        DELETE FROM Submissions
+        WHERE StudentID = @UserID;
+
+        DELETE FROM Enrollments
+        WHERE StudentID = @UserID;
+
+        DELETE FROM Users
+        WHERE UserID = @UserID;
+
+        INSERT INTO AuditLog(TableName, Action, RecordID, Notes)
+        VALUES('Users','DELETE',@UserID,'User deleted successfully');
+
+        COMMIT TRANSACTION;
+    END TRY
+
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+
+        THROW;
+    END CATCH
+END;
+GO
+
+
+/* ---------------- ADD SUBMISSION ---------------- */
+
+CREATE OR ALTER PROCEDURE sp_AddSubmission
+    @AssignmentID INT,
+    @StudentID INT,
+    @FilePath VARCHAR(255),
+    @Content VARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        IF EXISTS
+        (
+            SELECT 1
+            FROM Submissions
+            WHERE AssignmentID = @AssignmentID
+            AND StudentID = @StudentID
+        )
+        BEGIN
+            UPDATE Submissions
+            SET
+                FilePath = @FilePath,
+                Content = @Content,
+                SubmissionDate = GETDATE(),
+                Status = 'Resubmitted'
+            WHERE AssignmentID = @AssignmentID
+            AND StudentID = @StudentID;
+        END
+        ELSE
+        BEGIN
+            INSERT INTO Submissions
+            (
+                AssignmentID,
+                StudentID,
+                FilePath,
+                Content,
+                Status
+            )
+            VALUES
+            (
+                @AssignmentID,
+                @StudentID,
+                @FilePath,
+                @Content,
+                'Submitted'
+            );
+        END
+
+        INSERT INTO AuditLog(TableName, Action, RecordID, Notes)
+        VALUES('Submissions','INSERT',@StudentID,'Submission added successfully');
+
+        COMMIT TRANSACTION;
+    END TRY
+
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+
+/* ---------------- ENROLL STUDENT ---------------- */
+
+CREATE OR ALTER PROCEDURE sp_EnrollStudent
+    @StudentID INT,
+    @OfferingID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO Enrollments(StudentID, OfferingID)
+    VALUES(@StudentID, @OfferingID);
+END;
+GO
+
+
+/* ---------------- MARK ATTENDANCE ---------------- */
+
+CREATE OR ALTER PROCEDURE sp_MarkAttendance
+    @OfferingID INT,
+    @StudentID INT,
+    @AttendanceDate DATE,
+    @Status VARCHAR(10),
+    @MarkedBy INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO Attendance
+    (
+        OfferingID,
+        StudentID,
+        AttendanceDate,
+        Status,
+        MarkedBy
+    )
+    VALUES
+    (
+        @OfferingID,
+        @StudentID,
+        @AttendanceDate,
+        @Status,
+        @MarkedBy
+    );
+END;
+GO
+CREATE OR ALTER PROCEDURE sp_UpdateUser
+    @UserID     INT,
+    @FirstName  VARCHAR(50),
+    @LastName   VARCHAR(50),
+    @Email      VARCHAR(100),
+    @UserType   VARCHAR(20),
+    @Phone      VARCHAR(20),
+    @IsActive   BIT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE Users
+    SET
+        FirstName = @FirstName,
+        LastName  = @LastName,
+        Email     = @Email,
+        UserType  = @UserType,
+        Phone     = @Phone,
+        IsActive  = @IsActive
+    WHERE UserID = @UserID;
+
+    INSERT INTO AuditLog (TableName, Action, RecordID, Notes)
+    VALUES ('Users', 'UPDATE', @UserID, 'User updated successfully');
+END;
+GO
+/* ---------------- ADD USER ---------------- */
+USE Flex15;
+GO
+
+CREATE OR ALTER PROCEDURE sp_AddUser
+    @Email     VARCHAR(100),
+    @Password  VARCHAR(255),
+    @FirstName VARCHAR(50),
+    @LastName  VARCHAR(50),
+    @UserType  VARCHAR(20),
+    @Phone     VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO Users (Email, Password, FirstName, LastName, UserType, Phone)
+    VALUES (@Email, @Password, @FirstName, @LastName, @UserType, @Phone);
+END;
+GO
+CREATE OR ALTER PROCEDURE sp_AddSubmission
+    @AssignmentID INT,
+    @StudentID    INT,
+    @Content      VARCHAR(MAX) = NULL,
+    @Status       VARCHAR(20)  = 'Submitted'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+            IF EXISTS (
+                SELECT 1 FROM Submissions
+                WHERE AssignmentID = @AssignmentID AND StudentID = @StudentID
+            )
+            BEGIN
+                UPDATE Submissions
+                SET Content        = @Content,
+                    SubmissionDate = GETDATE(),
+                    Status         = 'Resubmitted'
+                WHERE AssignmentID = @AssignmentID AND StudentID = @StudentID;
+            END
+            ELSE
+            BEGIN
+                INSERT INTO Submissions (AssignmentID, StudentID, Content, Status, SubmissionDate)
+                VALUES (@AssignmentID, @StudentID, @Content, @Status, GETDATE());
+            END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+/* ---------------- UPDATE USER ---------------- */
+CREATE OR ALTER PROCEDURE sp_UpdateUser
+    @UserID    INT,
+    @FirstName VARCHAR(50),
+    @LastName  VARCHAR(50),
+    @Email     VARCHAR(100),
+    @UserType  VARCHAR(20),
+    @Phone     VARCHAR(20),
+    @IsActive  BIT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE Users
+    SET FirstName = @FirstName,
+        LastName  = @LastName,
+        Email     = @Email,
+        UserType  = @UserType,
+        Phone     = @Phone,
+        IsActive  = @IsActive
+    WHERE UserID = @UserID;
+
+    INSERT INTO AuditLog (TableName, Action, RecordID, Notes)
+    VALUES ('Users', 'UPDATE', @UserID, 'User updated');
+END;
+GO
+
+/* ---------------- DELETE USER ---------------- */
+CREATE OR ALTER PROCEDURE sp_DeleteUser
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+            DELETE FROM Attendance  WHERE StudentID = @UserID;
+            DELETE FROM Submissions WHERE StudentID = @UserID;
+            DELETE FROM Enrollments WHERE StudentID = @UserID;
+            DELETE FROM Users       WHERE UserID    = @UserID;
+            INSERT INTO AuditLog (TableName, Action, RecordID, Notes)
+            VALUES ('Users', 'DELETE', @UserID, 'User deleted');
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+/* =========================================================
+   7. TRIGGERS
+========================================================= */
+
+/* ---------------- UPDATE LAST LOGIN ---------------- */
+
+CREATE OR ALTER TRIGGER trg_UpdateLastLogin
+ON Users
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE U
+    SET LastLogin = GETDATE()
+    FROM Users U
+    INNER JOIN inserted I ON U.UserID = I.UserID;
+END;
+GO
+
+
+/* ---------------- AUDIT USER INSERT ---------------- */
+
+CREATE OR ALTER TRIGGER trg_UserInsert
+ON Users
+AFTER INSERT
+AS
+BEGIN
+    INSERT INTO AuditLog(TableName, Action, RecordID, Notes)
+    SELECT
+        'Users',
+        'INSERT',
+        UserID,
+        'New user added'
+    FROM inserted;
+END;
+GO
+
+
+/* ---------------- AUDIT USER DELETE ---------------- */
+
+CREATE OR ALTER TRIGGER trg_UserDelete
+ON Users
+AFTER DELETE
+AS
+BEGIN
+    INSERT INTO AuditLog(TableName, Action, RecordID, Notes)
+    SELECT
+        'Users',
+        'DELETE',
+        UserID,
+        'User deleted'
+    FROM deleted;
+END;
+GO
+
+
+/* ---------------- AUDIT SUBMISSION INSERT ---------------- */
+
+CREATE OR ALTER TRIGGER trg_SubmissionInsert
+ON Submissions
+AFTER INSERT
+AS
+BEGIN
+    INSERT INTO AuditLog(TableName, Action, RecordID, Notes)
+    SELECT
+        'Submissions',
+        'INSERT',
+        SubmissionID,
+        'New submission uploaded'
+    FROM inserted;
+END;
+GO
+
+
+/* =========================================================
+   8. TRANSACTIONS EXAMPLES
+========================================================= */
+
+BEGIN TRY
+    BEGIN TRANSACTION;
+
+    UPDATE Users
+    SET Phone = '0300-9999999'
+    WHERE UserID = 1;
+
+    UPDATE Departments
+    SET Description = 'Updated Department Description'
+    WHERE DepartmentID = 1;
+
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    ROLLBACK TRANSACTION;
+END CATCH;
+GO
+
+
